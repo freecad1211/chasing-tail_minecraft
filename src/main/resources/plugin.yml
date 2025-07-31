@@ -1,0 +1,11 @@
+name: chasingtail
+version: '1.0-beta'
+main: io.github.freecad1211.chasingtail.Chasingtail
+api-version: '1.21'
+author:
+  - jeonensu
+commands:
+  꼬리잡기:
+    description: 꼬리잡기 게임을 시작합니다.
+    usage: /<command> 시작
+    permission: chasingtail.start # 필요한 경우 권한 추가
