@@ -1,164 +1,162 @@
 package io.github.freecad1211.chasingtail;
 
-import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.Material;
-import java.util.*;
-import java.util.logging.Level; // Logger 레벨을 사용하기 위함
+import org.bukkit.plugin.java.JavaPlugin;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Level;
 
 public class Chasingtail extends JavaPlugin {
 
-    private static Chasingtail plugin; // 플러그인 인스턴스 (싱글톤)
-    private boolean gameActive = false; // 게임 진행 여부
-    // 플레이어와 그들의 타겟을 매핑하는 맵
-    private final Map<Player, Player> playerTargets = new HashMap<>();
-    // 플레이어와 그들의 할당된 색깔을 매핑하는 맵
-    private final Map<Player, ChatColor> playerColors = new HashMap<>();
+    /** 게임 참여 가능 인원 범위 (2명 ~ 8명). */
+    public static final int MIN_PLAYERS = 2;
+    public static final int MAX_PLAYERS = 8;
 
-    // 사용할 수 있는 색깔 목록 (최대 8명)
-    private final ChatColor[] availableColors = {
+    private static final ChatColor[] AVAILABLE_COLORS = {
             ChatColor.RED, ChatColor.GOLD, ChatColor.YELLOW, ChatColor.GREEN,
             ChatColor.AQUA, ChatColor.BLUE, ChatColor.DARK_PURPLE, ChatColor.BLACK
     };
 
+    private boolean gameActive = false;
+    private final Map<Player, Player> playerTargets = new HashMap<>();
+    private final Map<Player, ChatColor> playerColors = new HashMap<>();
+
     @Override
     public void onEnable() {
-        plugin = this; // 현재 인스턴스 할당
         getLogger().log(Level.INFO, "[ChasingTail] 플러그인이 활성화되었습니다!");
-
-        // 명령어 등록: "/꼬리잡기" 명령어를 GameCommandExecutor 클래스가 처리하도록 설정
-        Objects.requireNonNull(this.getCommand("꼬리잡기")).setExecutor(new GameCommandExecutor(this));
-
-        // 이벤트 리스너 등록: 게임 이벤트(플레이어 상호작용, 사망)를 GameEventListener 클래스가 처리하도록 설정
+        getCommand("꼬리잡기").setExecutor(new GameCommandExecutor(this));
         getServer().getPluginManager().registerEvents(new GameEventListener(this), this);
     }
 
     @Override
     public void onDisable() {
         getLogger().log(Level.INFO, "[ChasingTail] 플러그인이 비활성화되었습니다!");
-        // 플러그인이 비활성화될 때, 진행 중인 게임이 있다면 종료 처리
         if (gameActive) {
             endGame();
         }
     }
 
-    // 다른 클래스에서 플러그인 인스턴스에 접근할 수 있도록 하는 메서드
-    public static Chasingtail getPlugin() {
-        return plugin;
-    }
-
     /**
      * 꼬리잡기 게임을 시작합니다.
+     *
      * @param participants 게임에 참여할 플레이어 목록
      * @return 게임 시작 성공 여부
      */
     public boolean startGame(List<Player> participants) {
-        if (gameActive) {
-            return false; // 이미 게임이 진행 중
-        }
-        if (participants.size() < 2 || participants.size() > 8) {
-            return false; // 인원 제한 (2명 ~ 8명)
+        if (gameActive || participants.size() < MIN_PLAYERS || participants.size() > MAX_PLAYERS) {
+            return false;
         }
 
         gameActive = true;
         playerTargets.clear();
         playerColors.clear();
 
-        // 플레이어 목록을 섞어서 무작위 순서로 만듭니다.
         Collections.shuffle(participants);
 
-        // 플레이어에게 색깔 할당 및 타겟 설정
+        // 각 플레이어에게 색깔을 할당하고 다음 순서 플레이어를 타겟으로 지정 (마지막은 첫 번째).
         for (int i = 0; i < participants.size(); i++) {
-            Player currentPlayer = participants.get(i);
-            Player targetPlayer = participants.get((i + 1) % participants.size()); // 다음 플레이어가 타겟 (마지막은 첫 번째)
+            Player current = participants.get(i);
+            Player target = participants.get((i + 1) % participants.size());
+            ChatColor color = AVAILABLE_COLORS[i];
 
-            playerColors.put(currentPlayer, availableColors[i]); // 순서대로 색깔 할당
-            playerTargets.put(currentPlayer, targetPlayer); // 타겟 설정
+            playerColors.put(current, color);
+            playerTargets.put(current, target);
 
-            // 플레이어에게 게임 시작 정보 알림
-            currentPlayer.sendMessage(ChatColor.GREEN + "--- 꼬리잡기 게임 시작 ---");
-            currentPlayer.sendMessage(ChatColor.YELLOW + "당신의 색깔은 " + availableColors[i] + "■" + ChatColor.YELLOW + "입니다.");
-            currentPlayer.sendMessage(ChatColor.YELLOW + "당신의 타겟은 " + playerColors.get(targetPlayer) + targetPlayer.getName() + ChatColor.YELLOW + "님입니다.");
-            currentPlayer.sendMessage(ChatColor.GRAY + "다이아몬드 2개를 손에 들고 우클릭하면 타겟의 방향을 볼 수 있습니다.");
-            currentPlayer.sendMessage(ChatColor.GREEN + "-------------------------");
+            current.sendMessage(Messages.gameStartTitle());
+            current.sendMessage(Messages.myColorMessage(color));
+            current.sendMessage(Messages.myTargetMessage(playerColors.get(target), target.getName()));
+            current.sendMessage(Messages.controllHint());
+            current.sendMessage(Messages.boardDivider());
         }
 
-        Bukkit.broadcastMessage(ChatColor.GREEN + "[꼬리잡기] " + participants.size() + "명의 플레이어로 게임이 시작되었습니다!");
+        Bukkit.broadcastMessage(Messages.gameStarted(participants.size()));
         return true;
     }
 
     /**
-     * 꼬리잡기 게임을 종료합니다.
+     * 꼬리잡기 게임을 종료하고 모든 게임 상태를 초기화합니다.
      */
     public void endGame() {
         gameActive = false;
         playerTargets.clear();
         playerColors.clear();
-
-
-        Bukkit.broadcastMessage(ChatColor.YELLOW + "[꼬리잡기] 게임이 종료되었습니다!");
+        Bukkit.broadcastMessage(Messages.gameEnded());
     }
 
     /**
-     * 플레이어가 타겟을 죽였을 때 타겟을 변경하는 로직.
-     * @param killer 타겟을 죽인 플레이어
-     * @param killed 죽임을 당한 플레이어 (killer의 타겟이어야 함)
+     * 플레이어가 자신의 타겟을 제거했을 때 타겟을 변경하는 로직.
+     *
+     * @param killer 타겟을 제거한 플레이어
+     * @param killed  제거당한 플레이어 (killer의 타겟이어야 함)
      */
     public void updateTarget(Player killer, Player killed) {
-        if (!gameActive) return; // 게임 중이 아니면 실행 안 함
+        if (!gameActive) return;
 
-        // 죽인 플레이어의 현재 타겟
         Player killerCurrentTarget = playerTargets.get(killer);
-        // 죽은 플레이어의 타겟
         Player killedPlayersTarget = playerTargets.get(killed);
+        ChatColor killerColor = playerColors.get(killer);
+        ChatColor killedColor = playerColors.get(killed);
 
-        // 1. 죽인 플레이어 (killer)의 타겟이 죽은 플레이어 (killed)인지 확인
-        if (killerCurrentTarget != null && killerCurrentTarget.equals(killed)) {
-            // 2. 죽인 플레이어의 새로운 타겟을 죽은 플레이어의 타겟으로 설정
-            playerTargets.put(killer, killedPlayersTarget);
+        // killer의 타겟이 killed인 경우에만 타겟 변경을 진행.
+        if (killerCurrentTarget == null || !killerCurrentTarget.equals(killed)) {
+            Bukkit.broadcastMessage(Messages.wrongTarget(killerColor, killer.getName(),
+                    killedColor, killed.getName()));
+            return;
+        }
 
-            // 3. 죽은 플레이어를 게임에서 제거
-            playerTargets.remove(killed);
-            playerColors.remove(killed);
+        // killer의 새로운 타겟을 killed의 타겟으로 지정하고 killed를 게임에서 제거.
+        playerTargets.put(killer, killedPlayersTarget);
+        playerTargets.remove(killed);
+        playerColors.remove(killed);
 
-            // 4. 모든 플레이어에게 타겟 변경 및 상황 알림
-            Bukkit.broadcastMessage(playerColors.get(killer) + killer.getName() + ChatColor.WHITE +
-                    "님이 " + playerColors.get(killed) + killed.getName() + ChatColor.WHITE +
-                    "님을 잡았습니다!");
+        Bukkit.broadcastMessage(Messages.caughtBy(killerColor, killer.getName(),
+                killedColor, killed.getName()));
 
-            if (killedPlayersTarget != null) {
-                Bukkit.broadcastMessage(playerColors.get(killer) + killer.getName() + ChatColor.WHITE +
-                        "님의 새로운 타겟은 " + playerColors.get(killedPlayersTarget) + killedPlayersTarget.getName() + ChatColor.WHITE + "님입니다.");
-                killer.sendMessage(ChatColor.AQUA + "당신의 새로운 타겟: " + playerColors.get(killedPlayersTarget) + killedPlayersTarget.getName());
-            } else {
-                // 죽은 플레이어의 타겟이 없었다는 것은 마지막 타겟이었을 가능성 (승리 조건)
-                Bukkit.broadcastMessage(ChatColor.YELLOW + "남은 플레이어: " + playerTargets.size() + "명.");
-            }
+        if (killedPlayersTarget != null) {
+            Bukkit.broadcastMessage(Messages.newTargetBroadcast(killerColor, killer.getName(),
+                    playerColors.get(killedPlayersTarget), killedPlayersTarget.getName()));
+            killer.sendMessage(Messages.newTargetMessage(
+                    playerColors.get(killedPlayersTarget), killedPlayersTarget.getName()));
+            return;
+        }
 
-            // 5. 게임 종료 조건 확인 (예: 마지막 한 명만 남았을 때)
-            if (playerTargets.size() <= 1) { // 킬러만 남거나 아무도 안 남았을 경우
-                if (playerTargets.size() == 1) {
-                    Player winner = playerTargets.keySet().iterator().next();
-                    Bukkit.broadcastMessage(ChatColor.GOLD + "축하합니다! " + playerColors.get(winner) + winner.getName() + ChatColor.GOLD + "님이 꼬리잡기 게임에서 승리했습니다!");
-                } else {
-                    Bukkit.broadcastMessage(ChatColor.RED + "모든 플레이어가 제거되어 게임이 종료되었습니다. 승자가 없습니다!");
-                }
-                endGame(); // 게임 종료
-            }
+        // killed가 마지막 타겟이었다면 남은 인원을 표시하고 승리 여부를 판정.
+        Bukkit.broadcastMessage(Messages.remainingPlayers(playerTargets.size()));
+        checkForVictory();
+    }
 
-        } else {
-            // 자신의 타겟이 아닌 다른 플레이어를 죽였을 경우
-            Bukkit.broadcastMessage(playerColors.get(killer) + killer.getName() + ChatColor.WHITE +
-                    "님이 " + playerColors.get(killed) + killed.getName() + ChatColor.WHITE +
-                    "님을 죽였지만, " + ChatColor.RED + "타겟이 아니었습니다!");
-            // TODO: 비 타겟을 죽였을 경우 페널티 부여 (선택 사항)
+    /**
+     * 남은 인원이 1명 이하가 되면 승리자(또는 승자 없는 종료)를 선언하고 게임을 종료합니다.
+     */
+    public void checkForVictory() {
+        if (playerTargets.size() == 1) {
+            Player winner = playerTargets.keySet().iterator().next();
+            Bukkit.broadcastMessage(Messages.winner(playerColors.get(winner), winner.getName()));
+            endGame();
+        } else if (playerTargets.isEmpty()) {
+            Bukkit.broadcastMessage(Messages.noWinner());
+            endGame();
         }
     }
 
-    // --- Getter 메서드 ---
+    /**
+     * 게임 참여자가 사망한 경우 게임에서 제거하고 승리 여부를 판정합니다.
+     * 사망이 killer의 타겟 제거로 이어지면 {@link #updateTarget(Player, Player)}가 처리합니다.
+     */
+    public void eliminatePlayer(Player killed) {
+        if (!playerTargets.containsKey(killed)) return;
+
+        Bukkit.broadcastMessage(Messages.removedFromGame(playerColors.get(killed), killed.getName()));
+        playerTargets.remove(killed);
+        playerColors.remove(killed);
+        checkForVictory();
+    }
+
     public boolean isGameActive() {
         return gameActive;
     }
